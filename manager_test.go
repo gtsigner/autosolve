@@ -1,6 +1,7 @@
 package autosolve
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -67,4 +68,8 @@ func TestNewManager(t *testing.T) {
 	case InvalidCredentials:
 		print("Invalid Credentials")
 	}
+}
+
+func TestNa(t *testing.T) {
+	fmt.Println("tt", t)
 }
