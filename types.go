@@ -45,6 +45,16 @@ const (
 	Disconnected Status = "Disconnected"
 )
 
+const (
+	ReCaptchaV2Checkbox   int = 0
+	ReCaptchaV2Invisible  int = 1
+	ReCaptchaV3           int = 2
+	HCaptchaCheckbox      int = 3
+	HCaptchaInvisible     int = 4
+	GeeTest               int = 5
+	ReCaptchaV3Enterprise int = 6
+)
+
 type CaptchaTokenResponseListener func(response CaptchaTokenResponse)
 type CaptchaTokenCancelResponseListener func(response CaptchaTokenCancelResponse)
 type ErrorListener func(err error)
