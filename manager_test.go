@@ -33,7 +33,7 @@ func TestNewManager(t *testing.T) {
 	if clientId == "" || accessToken == "" || apiKey == "" {
 		panic("please input your params to env")
 	}
-	manger := NewManager(Options{
+	manger := NewClient(Options{
 		ClientId: clientId,
 	})
 	callback := I{}

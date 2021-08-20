@@ -14,8 +14,8 @@ import (
 type Options struct {
 	ClientId string
 }
-type AYCDManager struct {
-	locker            sync.Locker
+type Client struct {
+	locker            sync.Mutex
 	account           Account
 	connection        *amqp.Connection
 	directChannel     *amqp.Channel
@@ -51,25 +51,26 @@ type IListener interface {
 	CaptchaTokenResponseListener(response CaptchaTokenResponse)
 }
 
-func NewManager(options Options) *AYCDManager {
-	m := &AYCDManager{}
+func NewClient(options Options) *Client {
+	m := &Client{}
+	m.locker = sync.Mutex{}
 	m.clientId = options.ClientId
 	m.reconnectTimeouts = []time.Duration{2, 3, 5, 8, 13, 21, 34}
 	return m
 }
 
-func (m *AYCDManager) Set(accessToken, apiKey string) {
+func (m *Client) Set(accessToken, apiKey string) {
 	m.apiKey = apiKey
 	m.accessToken = accessToken
 }
-func (m *AYCDManager) Load(listener IListener) error {
+func (m *Client) Load(listener IListener) error {
 	m.locker.Lock()
 	defer m.locker.Unlock()
 	m.listener = listener
 	return nil
 }
 
-func (m *AYCDManager) Connect(accessToken, apiKey string) (ConnectResult, error) {
+func (m *Client) Connect(accessToken, apiKey string) (ConnectResult, error) {
 	m.Set(accessToken, apiKey)
 	if m.connectionPending {
 		return ConnectionPending, nil
@@ -98,7 +99,7 @@ func (m *AYCDManager) Connect(accessToken, apiKey string) (ConnectResult, error)
 	}
 	return InvalidAccessToken, nil
 }
-func (m *AYCDManager) connect(reconnect bool) (ConnectResult, error) {
+func (m *Client) connect(reconnect bool) (ConnectResult, error) {
 	if m.connectionPending {
 		return ConnectionPending, nil
 	}
@@ -140,11 +141,11 @@ func (m *AYCDManager) connect(reconnect bool) (ConnectResult, error) {
 	m.connectionPending = false
 	return result, err
 }
-func (m *AYCDManager) updateStatus(status Status) {
+func (m *Client) updateStatus(status Status) {
 	m.listener.StatusListener(status)
 }
 
-func (m *AYCDManager) SendTokenRequest(request CaptchaTokenRequest) error {
+func (m *Client) SendTokenRequest(request CaptchaTokenRequest) error {
 	if m.IsClosed() {
 		return errors.New("the connection is not available")
 	}
@@ -165,7 +166,7 @@ func (m *AYCDManager) SendTokenRequest(request CaptchaTokenRequest) error {
 	}
 	return err
 }
-func (m *AYCDManager) SendTokenCancelRequest(request CaptchaTokenCancelRequest) error {
+func (m *Client) SendTokenCancelRequest(request CaptchaTokenCancelRequest) error {
 	if m.IsClosed() {
 		return errors.New("the connection is not available")
 	}
@@ -187,14 +188,14 @@ func (m *AYCDManager) SendTokenCancelRequest(request CaptchaTokenCancelRequest) 
 	return err
 }
 
-func (m *AYCDManager) IsConnected() bool {
+func (m *Client) IsConnected() bool {
 	return !m.IsClosed()
 }
 
-func (m *AYCDManager) IsClosed() bool {
+func (m *Client) IsClosed() bool {
 	return m.connection == nil || m.connection.IsClosed()
 }
-func (m *AYCDManager) Close() error {
+func (m *Client) Close() error {
 	var err error = nil
 	m.explicitShutdown = true
 	if !m.IsClosed() {
@@ -202,7 +203,7 @@ func (m *AYCDManager) Close() error {
 	}
 	return err
 }
-func (m *AYCDManager) registerNotifyClose() {
+func (m *Client) registerNotifyClose() {
 	closeCh := make(chan *amqp.Error)
 	m.connection.NotifyClose(closeCh)
 	connErr := <-closeCh
@@ -213,7 +214,7 @@ func (m *AYCDManager) registerNotifyClose() {
 		go m.reconnect()
 	}
 }
-func (m *AYCDManager) reconnect() {
+func (m *Client) reconnect() {
 	for m.IsClosed() && !m.explicitShutdown {
 		m.updateStatus(Reconnecting)
 		timeout := m.getNextReconnectTimeout()
@@ -225,7 +226,7 @@ func (m *AYCDManager) reconnect() {
 		}
 	}
 }
-func (m *AYCDManager) createKeys() {
+func (m *Client) createKeys() {
 	m.directExchangeName = m.createKeyWithAccountId(directExchangePrefix)
 	m.fanoutExchangeName = m.createKeyWithAccountId(fanoutExchangePrefix)
 
@@ -236,7 +237,7 @@ func (m *AYCDManager) createKeys() {
 	m.requestTokenRouteKey = m.createKeyWithAccessToken(requestTokenRoutePrefix)
 	m.requestTokenCancelRouteKey = m.createKeyWithAccessToken(requestTokenCancelRoutePrefix)
 }
-func (m *AYCDManager) getNextReconnectTimeout() time.Duration {
+func (m *Client) getNextReconnectTimeout() time.Duration {
 	var index int
 	if m.reconnectAttempt >= len(m.reconnectTimeouts) {
 		index = len(m.reconnectTimeouts) - 1
@@ -246,18 +247,18 @@ func (m *AYCDManager) getNextReconnectTimeout() time.Duration {
 	}
 	return m.reconnectTimeouts[index]
 }
-func (m *AYCDManager) createKeyWithAccountIdAndApiKey(prefix string) string {
+func (m *Client) createKeyWithAccountIdAndApiKey(prefix string) string {
 	return prefix + "." + m.account.rId + "." + m.account.rApiKey
 }
-func (m *AYCDManager) createKeyWithAccessToken(prefix string) string {
+func (m *Client) createKeyWithAccessToken(prefix string) string {
 	return prefix + "." + m.account.rAccessToken
 }
 
-func (m *AYCDManager) createKeyWithAccountId(prefix string) string {
+func (m *Client) createKeyWithAccountId(prefix string) string {
 	return prefix + "." + m.account.rId
 }
 
-func (m *AYCDManager) startConnection() error {
+func (m *Client) startConnection() error {
 	conn, err := amqp.Dial("amqp://" + strconv.Itoa(m.account.id) + ":" + m.account.accessToken + "@" + hostname + ":5672/" + vHost + "?heartbeat=10")
 	if checkError(err) {
 		return err
@@ -275,7 +276,7 @@ func (m *AYCDManager) startConnection() error {
 	return err
 }
 
-func (m *AYCDManager) registerConsumers() error {
+func (m *Client) registerConsumers() error {
 	err := m.bindQueues()
 	if !checkError(err) {
 		messages, err := m.directChannel.Consume(
@@ -303,7 +304,7 @@ func (m *AYCDManager) registerConsumers() error {
 	return err
 }
 
-func (m *AYCDManager) processTokenMessage(message *amqp.Delivery) {
+func (m *Client) processTokenMessage(message *amqp.Delivery) {
 	var tokenResponse CaptchaTokenResponse
 	var err = json.Unmarshal(message.Body, &tokenResponse)
 	if !checkError(err) {
@@ -313,7 +314,7 @@ func (m *AYCDManager) processTokenMessage(message *amqp.Delivery) {
 	}
 }
 
-func (m *AYCDManager) processTokenCancelMessage(message *amqp.Delivery) {
+func (m *Client) processTokenCancelMessage(message *amqp.Delivery) {
 	var tokenCancelResponse CaptchaTokenCancelResponse
 	var err = json.Unmarshal(message.Body, &tokenCancelResponse)
 	if !checkError(err) {
@@ -323,7 +324,7 @@ func (m *AYCDManager) processTokenCancelMessage(message *amqp.Delivery) {
 	}
 }
 
-func (m *AYCDManager) bindQueues() error {
+func (m *Client) bindQueues() error {
 	var err error
 	err = m.directChannel.QueueBind(
 		m.responseQueueName,
@@ -344,7 +345,7 @@ func (m *AYCDManager) bindQueues() error {
 	return err
 }
 
-func (m *AYCDManager) verifyCredentials() (ConnectResult, error) {
+func (m *Client) verifyCredentials() (ConnectResult, error) {
 	url := "https://dash.autosolve.aycd.io/rest/" + m.account.accessToken + "/verify/" + m.account.apiKey + "?clientId=" + m.clientId
 	response, err := http.Get(url)
 	if checkError(err) {
