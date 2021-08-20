@@ -1,4 +1,4 @@
-module autosolve
+module github.com/godtoy/autosolve
 
 go 1.16
 
