@@ -63,6 +63,8 @@ func (m *AYCDManager) Set(accessToken, apiKey string) {
 	m.accessToken = accessToken
 }
 func (m *AYCDManager) Load(listener IListener) error {
+	m.locker.Lock()
+	defer m.locker.Unlock()
 	m.listener = listener
 	return nil
 }
